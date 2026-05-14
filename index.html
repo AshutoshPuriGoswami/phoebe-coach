@@ -5,6 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Phoebe — AI Career Coach</title>
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Exo+2:wght@300;400;600;700&display=swap" rel="stylesheet"/>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+  // Initialize Supabase
+  const SUPABASE_URL = 'https://yourproject.supabase.co'; // paste yours
+  const SUPABASE_KEY = 'eyJ...'; // paste your anon key
+  const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+</script>
 <style>
 :root{
 --bg:#0D0D1A;
@@ -857,20 +864,28 @@ function handleDevLogin(){
   else { err.textContent='Invalid developer credentials.'; err.style.display='block'; }
 }
 
-function handleLogin(){
+async function handleLogin(){
   var email = document.getElementById('loginEmail').value.trim().toLowerCase();
   var pass = document.getElementById('loginPassword').value;
   var err = document.getElementById('loginError');
   err.style.display='none';
   if(!email||!pass){ err.textContent='Please fill in all fields.'; err.style.display='block'; return; }
   if(email===DEV_EMAIL && pass===DEV_PASSWORD){ loginSuccess(DEV_EMAIL, DEV_NAME, true); return; }
-  var users = getUsers();
-  if(!users[email]){ err.textContent='No account found. Please sign up first.'; err.style.display='block'; return; }
-  if(users[email].password !== btoa(pass)){ err.textContent='Incorrect password.'; err.style.display='block'; return; }
-  loginSuccess(email, users[email].name, false);
+  const { data, error } = await supabaseClient.auth.signInWithPassword({ email: email, password: pass });
+  if(error){ err.textContent='Login failed: '+error.message; err.style.display='block'; return; }
+  var name = (data.user.user_metadata && data.user.user_metadata.name) ? data.user.user_metadata.name : email.split('@')[0];
+  currentUser = { email: data.user.email, name: name, isDev: false, id: data.user.id };
+  try{ localStorage.setItem('phoebe_session', JSON.stringify(currentUser)); }catch(e){}
+  document.getElementById('mainNav').style.display='flex';
+  document.getElementById('navUserName').textContent = 'Hi, '+name.split(' ')[0]+'!';
+  document.getElementById('devNavTab').style.display = 'none';
+  loadUserState();
+  refreshGoalKeySection();
+  loadPlanData();
+  showScreen('home');
 }
 
-function handleSignup(){
+async function handleSignup(){
   var name = document.getElementById('signupName').value.trim();
   var email = document.getElementById('signupEmail').value.trim().toLowerCase();
   var pass = document.getElementById('signupPassword').value;
@@ -881,13 +896,14 @@ function handleSignup(){
   if(pass.length<6){ err.textContent='Password must be at least 6 characters.'; err.style.display='block'; return; }
   if(!/\S+@\S+\.\S+/.test(email)){ err.textContent='Please enter a valid email.'; err.style.display='block'; return; }
   if(email===DEV_EMAIL){ err.textContent='That email is reserved.'; err.style.display='block'; return; }
-  var users = getUsers();
-  if(users[email]){ err.textContent='An account with this email already exists.'; err.style.display='block'; return; }
-  users[email] = { name:name, password:btoa(pass), created:Date.now(), apiKey:null };
-  saveUsers(users);
-  suc.textContent = 'Account created! Signing you in... ✨';
+  const { data, error } = await supabaseClient.auth.signUp({
+    email: email,
+    password: pass,
+    options: { data: { name: name } }
+  });
+  if(error){ err.textContent='Signup failed: '+error.message; err.style.display='block'; return; }
+  suc.textContent = 'Account created! Check your email to confirm, then sign in. ✨';
   suc.style.display='block';
-  setTimeout(function(){ loginSuccess(email, name, false); }, 1000);
 }
 
 function loginSuccess(email, name, isDev){
@@ -1241,6 +1257,34 @@ function loadUserState(){
 function save(){
   var k = getUserKey();
   if(k) try{ localStorage.setItem(k, JSON.stringify(state)); }catch(e){}
+  // Also persist roadmap to Supabase if user is logged in with real account
+  if(currentUser && !currentUser.isDev && currentUser.id && state.roadmap){
+    saveRoadmap(state.roadmap, state.goal).catch(function(e){ console.warn('Supabase save failed:', e); });
+  }
+}
+
+async function saveRoadmap(roadmapData, goal) {
+  if(!currentUser || !currentUser.id) return;
+  const { error } = await supabaseClient
+    .from('roadmaps')
+    .upsert({
+      user_id: currentUser.id,
+      goal: goal,
+      roadmap_data: roadmapData,
+      updated_at: new Date()
+    });
+  if (error) console.error('Save failed:', error);
+}
+
+async function loadRoadmap() {
+  if(!currentUser || !currentUser.id) return null;
+  const { data, error } = await supabaseClient
+    .from('roadmaps')
+    .select('*')
+    .eq('user_id', currentUser.id)
+    .single();
+  if(error) return null;
+  return data;
 }
 
 // =========================================
@@ -1308,15 +1352,14 @@ async function generateRoadmap(){
   document.getElementById('roadmapLoading').style.display='block';
   document.getElementById('generateRoadmapBtn').disabled=true;
   try{
-    var prompt = 'Career roadmap for: '+goal+'. Reply with ONLY this JSON, no other text: {"totalDays":180,"phases":[{"title":"Foundation","duration":"Days 1-60","skills":["skill1","skill2","skill3"]},{"title":"Core Skills","duration":"Days 61-120","skills":["skill1","skill2","skill3"]},{"title":"Advanced","duration":"Days 121-180","skills":["skill1","skill2","skill3"]}],"todayFocus":"task","motivationalMessage":"message"}';
-    var res = await fetch('https://api.groq.com/openai/v1/chat/completions',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},
-      body:JSON.stringify({model:'llama-3.3-70b-versatile',max_tokens:600,messages:[{role:'system',content:'You are a career roadmap generator. Return ONLY valid JSON, no markdown, no backticks, no explanation. The response must start with { and end with }.'},{role:'user',content:prompt}]})
+    var res = await fetch('/api/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ goal: goal })
     });
     var data = await res.json();
-    if(data.error){ throw new Error(data.error.message||'API error'); }
-    var text = data.choices[0].message.content;
+    if(!res.ok){ throw new Error(data.error || 'API error'); }
+    var text = data.content;
     var start = text.indexOf('{');
     var end = text.lastIndexOf('}');
     if(start===-1||end===-1) throw new Error('No JSON found');
