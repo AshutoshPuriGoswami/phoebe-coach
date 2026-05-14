@@ -1,5 +1,5 @@
 # phoebe-coach
-Phoebe — AI Career Coach 🎯
+Phoebe — AI Career Coach 
 
 Your free, personalized AI career coach built for Indian students and professionals.
 
@@ -10,13 +10,13 @@ Phoebe is a web app that helps you build a clear, structured roadmap toward your
 
 Features
 
-🗺️ AI Roadmap Generator — Enter your goal, get a structured 180-day roadmap instantly
-✅ Daily Proof System — Submit what you studied each day
-🧠 AI Quiz Verification — Groq AI generates a quiz based on your proof to verify learning
-🔥 Streak Tracker — Track your consistency with streaks and XP
-📋 Custom Plan Builder — Build your own phases and tasks with deadlines
-🔐 Secure Auth — Real authentication powered by Supabase
-📱 Mobile Friendly — Works on all devices
+   AI Roadmap Generator — Enter your goal, get a structured 180-day roadmap instantly
+   Daily Proof System — Submit what you studied each day
+   AI Quiz Verification — Groq AI generates a quiz based on your proof to verify learning
+   Streak Tracker — Track your consistency with streaks and XP
+   Custom Plan Builder — Build your own phases and tasks with deadlines
+   Secure Auth — Real authentication powered by Supabase
+    Mobile Friendly — Works on all devices
 
 
 Tech Stack
